@@ -10,9 +10,10 @@ train_makeup_labels = 'train_MAKEMIX.txt'
 test_non_makeup_labels = 'test_SYMIX.txt'
 test_makeup_labels = 'test_MAKEMIX.txt'
 
-data_path = '/home/zhiyong/RemoteServer/data/makeup_dataset/'
+# data_path = '/home/zhiyong/RemoteServer/data/makeup_dataset/'
 # Windows测试文件夹
 # data_path = 'E:/Datasets/makeup_dataset/'
+data_path = 'F:/zzy/data/makeup_dataset'
 makeup_path = 'all/images/makeup/'
 non_makeup_path = 'all/images/non-makeup/'
 

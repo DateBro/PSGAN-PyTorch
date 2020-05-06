@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from data_loaders.makeup import *
 
 
 def ToTensor(pic):

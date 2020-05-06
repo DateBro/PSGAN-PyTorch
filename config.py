@@ -5,7 +5,9 @@ default = edict()
 default.snapshot_path = './snapshot/'
 default.vis_path = './visulization/'
 default.log_path = './log/'
-default.data_path = './data/'
+# default.data_path = './data/'
+default.data_path = '/home/zhiyong/RemoteServer/data/makeup_dataset'
+# default.data_path = 'F:/zzy/data/makeup_dataset'
 
 config = edict()
 # setting for cycleGAN
@@ -37,7 +39,9 @@ config.vis_step = config.snapshot_step
 config.batch_size = 1
 config.lambda_A = 10.0
 config.lambda_B =10.0
-config.lambda_idt = 0.5
+# config.lambda_idt = 0.5
+# 没看懂这个identity_loss哪来的，先关了
+config.lambda_idt = 0
 config.img_size = 256
 config.g_conv_dim = 64
 config.d_conv_dim = 64

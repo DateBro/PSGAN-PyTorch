@@ -11,7 +11,9 @@ from solver_psgan import Solver_PSGAN
 def parse_args():
     parser = argparse.ArgumentParser(description='Train GAN')
     # general
-    parser.add_argument('--data_path', default='makeup/makeup_final/', type=str, help='training and test data path')
+    # parser.add_argument('--data_path', default='F:/zzy/data/makeup_dataset', type=str, help='training and test data path')
+    parser.add_argument('--data_path', default='/home/zhiyong/RemoteServer/data/makeup_dataset', type=str, help='training and test data path')
+    # parser.add_argument('--data_path', default='makeup/makeup_final/', type=str, help='training and test data path')
     parser.add_argument('--dataset', default='MAKEUP', type=str, help='dataset name, MAKEUP means two domain, MMAKEUP means multi-domain')
     parser.add_argument('--gpus', default='0', type=str, help='GPU device to train with')
     parser.add_argument('--batch_size', default='1', type=int, help='batch_size')

@@ -1,16 +1,17 @@
-import torch
+import datetime
+import os
+import time
+
 import torch.nn.init as init
 from torch.autograd import Variable
 from torchvision.utils import save_image
+import torchvision.models as models
 
-import os
-import time
-import datetime
-
-import tools.plot as plot_fig
 import net
+import tools.plot as plot_fig
 from ops.histogram_matching import *
 from ops.loss_added import GANLoss
+
 
 class Solver_PSGAN(object):
     def __init__(self, data_loaders, config, dataset_config):
@@ -77,12 +78,14 @@ class Solver_PSGAN(object):
         if not os.path.exists(self.snapshot_path):
             os.makedirs(self.snapshot_path)
 
+        # self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
         self.build_model()
         # Start with trained model
         if self.checkpoint:
             self.load_checkpoint()
 
-        #for recording
+        # for recording
         self.start_time = time.time()
         # epoch和iteration
         self.e = 0
@@ -116,7 +119,7 @@ class Solver_PSGAN(object):
         elapsed = str(datetime.timedelta(seconds=elapsed))
 
         log = "Elapsed [{}], Epoch [{}/{}], Iter [{}/{}]".format(
-            elapsed, self.e+1, self.num_epochs, self.i+1, self.iters_per_epoch)
+            elapsed, self.e + 1, self.num_epochs, self.i + 1, self.iters_per_epoch)
 
         for tag, value in self.loss.items():
             log += ", {}: {:.4f}".format(tag, value)
@@ -139,6 +142,7 @@ class Solver_PSGAN(object):
     def to_var(self, x, requires_grad=True):
         if torch.cuda.is_available():
             x = x.cuda()
+        # x.to(self.device)
         if not requires_grad:
             return Variable(x, requires_grad=requires_grad)
         else:
@@ -164,9 +168,12 @@ class Solver_PSGAN(object):
 
         self.criterionL1 = torch.nn.L1Loss()
         self.criterionL2 = torch.nn.MSELoss()
-        self.criterionGAN = GANLoss(use_lsgan=True, tensor =torch.cuda.FloatTensor)
-        self.vgg = net.VGG()
-        self.vgg.load_state_dict(torch.load('addings/vgg_conv.pth'))
+        self.criterionGAN = GANLoss(use_lsgan=True, tensor=torch.cuda.FloatTensor)
+        # self.criterionGAN = GANLoss(use_lsgan=True, tensor=torch.FloatTensor)
+        # 这里先用issue中别人提供的guide，以后作者放出pretrained_model再改回来
+        # self.vgg = net.VGG()
+        # self.vgg.load_state_dict(torch.load('addings/vgg_conv.pth'))
+        self.vgg = models.vgg16(pretrained=True)
         # Optimizers
         self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
         for i in self.cls:
@@ -190,6 +197,16 @@ class Solver_PSGAN(object):
             for i in self.cls:
                 getattr(self, "D_" + i).cuda()
 
+        # self.G.to(self.device)
+        # self.vgg.to(self.device)
+        # for i in self.cls:
+        #     getattr(self, "D_" + i).to(self.device)
+
+    def vgg_forward(self, model, x):
+        for i in range(18):
+            x = model.features[i](x)
+        return x
+
     def rebound_box(self, mask_A, mask_B, mask_A_face):
         index_tmp = mask_A.nonzero()
         x_A_index = index_tmp[:, 2]
@@ -199,10 +216,10 @@ class Solver_PSGAN(object):
         y_B_index = index_tmp[:, 3]
         mask_A_temp = mask_A.copy_(mask_A)
         mask_B_temp = mask_B.copy_(mask_B)
-        mask_A_temp[: ,: ,min(x_A_index)-10:max(x_A_index)+11, min(y_A_index)-10:max(y_A_index)+11] = \
-            mask_A_face[: ,: ,min(x_A_index)-10:max(x_A_index)+11, min(y_A_index)-10:max(y_A_index)+11]
-        mask_B_temp[: ,: ,min(x_B_index)-10:max(x_B_index)+11, min(y_B_index)-10:max(y_B_index)+11] = \
-            mask_A_face[: ,: ,min(x_B_index)-10:max(x_B_index)+11, min(y_B_index)-10:max(y_B_index)+11]
+        mask_A_temp[:, :, min(x_A_index) - 10:max(x_A_index) + 11, min(y_A_index) - 10:max(y_A_index) + 11] = \
+            mask_A_face[:, :, min(x_A_index) - 10:max(x_A_index) + 11, min(y_A_index) - 10:max(y_A_index) + 11]
+        mask_B_temp[:, :, min(x_B_index) - 10:max(x_B_index) + 11, min(y_B_index) - 10:max(y_B_index) + 11] = \
+            mask_A_face[:, :, min(x_B_index) - 10:max(x_B_index) + 11, min(y_B_index) - 10:max(y_B_index) + 11]
         mask_A_temp = self.to_var(mask_A_temp, requires_grad=False)
         mask_B_temp = self.to_var(mask_B_temp, requires_grad=False)
         return mask_A_temp, mask_B_temp
@@ -257,26 +274,29 @@ class Solver_PSGAN(object):
                 # 7: upper-lip 8: teeth 9: under-lip 10:hair 11: left-ear 12: right-ear 13: neck
                 if self.checkpoint or self.direct:
                     if self.lips:
-                        mask_A_lip = (mask_A==7).float() + (mask_A==9).float()
-                        mask_B_lip = (mask_B==7).float() + (mask_B==9).float()
+                        mask_A_lip = (mask_A == 7).float() + (mask_A == 9).float()
+                        mask_B_lip = (mask_B == 7).float() + (mask_B == 9).float()
                         mask_A_lip, mask_B_lip, index_A_lip, index_B_lip = self.mask_preprocess(mask_A_lip, mask_B_lip)
                     if self.skin:
-                        mask_A_skin = (mask_A==1).float() + (mask_A==6).float() + (mask_A==13).float()
-                        mask_B_skin = (mask_B==1).float() + (mask_B==6).float() + (mask_B==13).float()
-                        mask_A_skin, mask_B_skin, index_A_skin, index_B_skin = self.mask_preprocess(mask_A_skin, mask_B_skin)
+                        mask_A_skin = (mask_A == 1).float() + (mask_A == 6).float() + (mask_A == 13).float()
+                        mask_B_skin = (mask_B == 1).float() + (mask_B == 6).float() + (mask_B == 13).float()
+                        mask_A_skin, mask_B_skin, index_A_skin, index_B_skin = self.mask_preprocess(mask_A_skin,
+                                                                                                    mask_B_skin)
                     if self.eye:
-                        mask_A_eye_left = (mask_A==4).float()
-                        mask_A_eye_right = (mask_A==5).float()
-                        mask_B_eye_left = (mask_B==4).float()
-                        mask_B_eye_right = (mask_B==5).float()
-                        mask_A_face = (mask_A==1).float() + (mask_A==6).float()
-                        mask_B_face = (mask_B==1).float() + (mask_B==6).float()
+                        mask_A_eye_left = (mask_A == 4).float()
+                        mask_A_eye_right = (mask_A == 5).float()
+                        mask_B_eye_left = (mask_B == 4).float()
+                        mask_B_eye_right = (mask_B == 5).float()
+                        mask_A_face = (mask_A == 1).float() + (mask_A == 6).float()
+                        mask_B_face = (mask_B == 1).float() + (mask_B == 6).float()
                         # avoid the situation that images with eye closed
-                        if not ((mask_A_eye_left>0).any() and (mask_B_eye_left>0).any() and \
+                        if not ((mask_A_eye_left > 0).any() and (mask_B_eye_left > 0).any() and \
                                 (mask_A_eye_right > 0).any() and (mask_B_eye_right > 0).any()):
                             continue
-                        mask_A_eye_left, mask_A_eye_right = self.rebound_box(mask_A_eye_left, mask_A_eye_right, mask_A_face)
-                        mask_B_eye_left, mask_B_eye_right = self.rebound_box(mask_B_eye_left, mask_B_eye_right, mask_B_face)
+                        mask_A_eye_left, mask_A_eye_right = self.rebound_box(mask_A_eye_left, mask_A_eye_right,
+                                                                             mask_A_face)
+                        mask_B_eye_left, mask_B_eye_right = self.rebound_box(mask_B_eye_left, mask_B_eye_right,
+                                                                             mask_B_face)
                         mask_A_eye_left, mask_B_eye_left, index_A_eye_left, index_B_eye_left = \
                             self.mask_preprocess(mask_A_eye_left, mask_B_eye_left)
                         mask_A_eye_right, mask_B_eye_right, index_A_eye_right, index_B_eye_right = \
@@ -290,11 +310,14 @@ class Solver_PSGAN(object):
                 out = getattr(self, "D_" + cls_A)(ref_B)
                 d_loss_real = self.criterionGAN(out, True)
                 # Fake
-                fake_A, fake_B = self.G(org_A, ref_B)
+                # 因为PSGAN论文中是一次只生成一个图片，所以这里没有采用BeautyGAN中2个branch
+                # fake_A, fake_B = self.G(org_A, ref_B)
+                fake_A = self.G(org_A, ref_B)
+                fake_B = self.G(ref_B, org_A)
                 fake_A = Variable(fake_A.data).detach()
                 fake_B = Variable(fake_B.data).detach()
                 out = getattr(self, "D_" + cls_A)(fake_A)
-                d_loss_fake =  self.criterionGAN(out, False)
+                d_loss_fake = self.criterionGAN(out, False)
 
                 # Backward + Optimize
                 d_loss = (d_loss_real + d_loss_fake) * 0.5
@@ -311,7 +334,7 @@ class Solver_PSGAN(object):
                 d_loss_real = self.criterionGAN(out, True)
                 # Fake
                 out = getattr(self, "D_" + cls_B)(fake_B)
-                d_loss_fake =  self.criterionGAN(out, False)
+                d_loss_fake = self.criterionGAN(out, False)
 
                 # Backward + Optimize
                 d_loss = (d_loss_real + d_loss_fake) * 0.5
@@ -330,8 +353,12 @@ class Solver_PSGAN(object):
                     # 论文里没有这个identity loss啊？
                     if self.lambda_idt > 0:
                         # G should be identity if ref_B or org_A is fed
-                        idt_A1, idt_A2 = self.G(org_A, org_A)
-                        idt_B1, idt_B2 = self.G(ref_B, ref_B)
+                        # idt_A1, idt_A2 = self.G(org_A, org_A)
+                        idt_A1 = self.G(org_A, org_A)
+                        idt_A2 = self.G(org_A, org_A)
+                        # idt_B1, idt_B2 = self.G(ref_B, ref_B)
+                        idt_B1 = self.G(ref_B, ref_B)
+                        idt_B2 = self.G(ref_B, ref_B)
                         # lambda_A和B都是啥？
                         loss_idt_A1 = self.criterionL1(idt_A1, org_A) * self.lambda_A * self.lambda_idt
                         loss_idt_A2 = self.criterionL1(idt_A2, org_A) * self.lambda_A * self.lambda_idt
@@ -344,34 +371,51 @@ class Solver_PSGAN(object):
 
                     # GAN loss D_A(G_A(A))
                     # fake_A in class B,
-                    fake_A, fake_B = self.G(org_A, ref_B)
+                    # fake_A, fake_B = self.G(org_A, ref_B)
+                    fake_A = self.G(org_A, ref_B)
+                    fake_B = self.G(ref_B, org_A)
                     pred_fake = getattr(self, "D_" + cls_A)(fake_A)
                     g_A_loss_adv = self.criterionGAN(pred_fake, True)
-                    #g_loss_adv = self.get_G_loss(out)
+                    # g_loss_adv = self.get_G_loss(out)
                     # GAN loss D_B(G_B(B))
                     pred_fake = getattr(self, "D_" + cls_B)(fake_B)
                     g_B_loss_adv = self.criterionGAN(pred_fake, True)
-                    rec_B, rec_A = self.G(fake_B, fake_A)
+                    # rec_B, rec_A = self.G(fake_B, fake_A)
+                    rec_B = self.G(fake_B, fake_A)
+                    rec_A = self.G(fake_A, fake_B)
 
                     # color_histogram loss
+                    # 这里作者的实现是不是有点问题啊，论文里的loss是计算的G(x,y)和HM(x,y)的，
+                    # 也就是fake_A和HM(org_A, ref_B)的啊
+                    # github issue 中作者也说这里和论文中little different
                     g_A_loss_his = 0
                     g_B_loss_his = 0
                     if self.checkpoint or self.direct:
                         if self.lips:
-                            g_A_lip_loss_his = self.criterionHis(fake_A, ref_B, mask_A_lip, mask_B_lip, index_A_lip) * self.lambda_his_lip
-                            g_B_lip_loss_his = self.criterionHis(fake_B, org_A, mask_B_lip, mask_A_lip, index_B_lip) * self.lambda_his_lip
+                            g_A_lip_loss_his = self.criterionHis(fake_A, ref_B, mask_A_lip, mask_B_lip,
+                                                                 index_A_lip) * self.lambda_his_lip
+                            g_B_lip_loss_his = self.criterionHis(fake_B, org_A, mask_B_lip, mask_A_lip,
+                                                                 index_B_lip) * self.lambda_his_lip
                             g_A_loss_his += g_A_lip_loss_his
                             g_B_loss_his += g_B_lip_loss_his
                         if self.skin:
-                            g_A_skin_loss_his = self.criterionHis(fake_A, ref_B, mask_A_skin, mask_B_skin, index_A_skin) * self.lambda_his_skin_1
-                            g_B_skin_loss_his = self.criterionHis(fake_B, org_A, mask_B_skin, mask_A_skin, index_B_skin) * self.lambda_his_skin_2
+                            g_A_skin_loss_his = self.criterionHis(fake_A, ref_B, mask_A_skin, mask_B_skin,
+                                                                  index_A_skin) * self.lambda_his_skin_1
+                            g_B_skin_loss_his = self.criterionHis(fake_B, org_A, mask_B_skin, mask_A_skin,
+                                                                  index_B_skin) * self.lambda_his_skin_2
                             g_A_loss_his += g_A_skin_loss_his
                             g_B_loss_his += g_B_skin_loss_his
                         if self.eye:
-                            g_A_eye_left_loss_his = self.criterionHis(fake_A, ref_B, mask_A_eye_left, mask_B_eye_left, index_A_eye_left) * self.lambda_his_eye
-                            g_B_eye_left_loss_his = self.criterionHis(fake_B, org_A, mask_B_eye_left, mask_A_eye_left, index_B_eye_left) * self.lambda_his_eye
-                            g_A_eye_right_loss_his = self.criterionHis(fake_A, ref_B, mask_A_eye_right, mask_B_eye_right, index_A_eye_right) * self.lambda_his_eye
-                            g_B_eye_right_loss_his = self.criterionHis(fake_B, org_A, mask_B_eye_right, mask_A_eye_right, index_B_eye_right) * self.lambda_his_eye
+                            g_A_eye_left_loss_his = self.criterionHis(fake_A, ref_B, mask_A_eye_left, mask_B_eye_left,
+                                                                      index_A_eye_left) * self.lambda_his_eye
+                            g_B_eye_left_loss_his = self.criterionHis(fake_B, org_A, mask_B_eye_left, mask_A_eye_left,
+                                                                      index_B_eye_left) * self.lambda_his_eye
+                            g_A_eye_right_loss_his = self.criterionHis(fake_A, ref_B, mask_A_eye_right,
+                                                                       mask_B_eye_right,
+                                                                       index_A_eye_right) * self.lambda_his_eye
+                            g_B_eye_right_loss_his = self.criterionHis(fake_B, org_A, mask_B_eye_right,
+                                                                       mask_A_eye_right,
+                                                                       index_B_eye_right) * self.lambda_his_eye
                             g_A_loss_his += g_A_eye_left_loss_his + g_A_eye_right_loss_his
                             g_B_loss_his += g_B_eye_left_loss_his + g_B_eye_right_loss_his
 
@@ -380,15 +424,26 @@ class Solver_PSGAN(object):
                     g_loss_rec_B = self.criterionL1(rec_B, ref_B) * self.lambda_B
 
                     # vgg loss
-                    vgg_org = self.vgg(org_A, self.content_layer)[0]
+                    vgg_org = self.vgg_forward(self.vgg, org_A)
                     vgg_org = Variable(vgg_org.data).detach()
-                    vgg_fake_A = self.vgg(fake_A, self.content_layer)[0]
+                    vgg_fake_A = self.vgg_forward(self.vgg, fake_A)
                     g_loss_A_vgg = self.criterionL2(vgg_fake_A, vgg_org) * self.lambda_A * self.lambda_vgg
 
-                    vgg_ref = self.vgg(ref_B, self.content_layer)[0]
+                    vgg_ref = self.vgg_forward(self.vgg, ref_B)
                     vgg_ref = Variable(vgg_ref.data).detach()
-                    vgg_fake_B = self.vgg(fake_B, self.content_layer)[0]
+                    vgg_fake_B = self.vgg_forward(self.vgg, fake_B)
                     g_loss_B_vgg = self.criterionL2(vgg_fake_B, vgg_ref) * self.lambda_B * self.lambda_vgg
+
+                    # 先用上面网友提供的guide
+                    # vgg_org = self.vgg(org_A, self.content_layer)[0]
+                    # vgg_org = Variable(vgg_org.data).detach()
+                    # vgg_fake_A = self.vgg(fake_A, self.content_layer)[0]
+                    # g_loss_A_vgg = self.criterionL2(vgg_fake_A, vgg_org) * self.lambda_A * self.lambda_vgg
+
+                    # vgg_ref = self.vgg(ref_B, self.content_layer)[0]
+                    # vgg_ref = Variable(vgg_ref.data).detach()
+                    # vgg_fake_B = self.vgg(fake_B, self.content_layer)[0]
+                    # g_loss_B_vgg = self.criterionL2(vgg_fake_B, vgg_ref) * self.lambda_B * self.lambda_vgg
 
                     loss_rec = (g_loss_rec_A + g_loss_rec_B + g_loss_A_vgg + g_loss_B_vgg) * 0.5
 
@@ -406,7 +461,8 @@ class Solver_PSGAN(object):
                     self.loss['G-B-loss-adv'] = g_A_loss_adv.item()
                     self.loss['G-loss-org'] = g_loss_rec_A.item()
                     self.loss['G-loss-ref'] = g_loss_rec_B.item()
-                    self.loss['G-loss-idt'] = loss_idt.item()
+                    # self.loss['G-loss-idt'] = loss_idt.item()
+                    self.loss['G-loss-idt'] = loss_idt
                     self.loss['G-loss-img-rec'] = (g_loss_rec_A + g_loss_rec_B).item()
                     self.loss['G-loss-vgg-rec'] = (g_loss_A_vgg + g_loss_B_vgg).item()
                     if self.direct:
@@ -417,11 +473,11 @@ class Solver_PSGAN(object):
                 if (self.i + 1) % self.log_step == 0:
                     self.log_terminal()
 
-                #plot the figures
+                # plot the figures
                 for key_now in self.loss.keys():
                     plot_fig.plot(key_now, self.loss[key_now])
 
-                #save the images
+                # save the images
                 if (self.i + 1) % self.vis_step == 0:
                     print("Saving middle output...")
                     self.vis_train([org_A, ref_B, fake_A, fake_B, rec_A, rec_B])
@@ -435,13 +491,13 @@ class Solver_PSGAN(object):
                 plot_fig.tick()
 
             # Decay learning rate
-            if (self.e+1) > (self.num_epochs - self.num_epochs_decay):
+            if (self.e + 1) > (self.num_epochs - self.num_epochs_decay):
                 g_lr -= (self.g_lr / float(self.num_epochs_decay))
                 d_lr -= (self.d_lr / float(self.num_epochs_decay))
                 self.update_lr(g_lr, d_lr)
                 print('Decay learning rate to g_lr: {}, d_lr:{}.'.format(g_lr, d_lr))
 
-            if self.e % 2 == 0:
+            if self.e % 20 == 0:
                 print("Saving output...")
                 self.vis_test()
 
@@ -467,8 +523,12 @@ class Solver_PSGAN(object):
             image_list.append(real_ref)
 
             # Get makeup result
-            fake_A, fake_B = self.G(real_org, real_ref)
-            rec_B, rec_A = self.G(fake_B, fake_A)
+            # fake_A, fake_B = self.G(real_org, real_ref)
+            fake_A = self.G(real_org, real_ref)
+            fake_B = self.G(real_ref, real_org)
+            # rec_B, rec_A = self.G(fake_B, fake_A)
+            rec_B = self.G(fake_B, fake_A)
+            rec_A = self.G(fake_A, fake_B)
 
             image_list.append(fake_A)
             image_list.append(fake_B)
@@ -482,17 +542,17 @@ class Solver_PSGAN(object):
                 os.makedirs(result_path_now)
             save_path = os.path.join(result_path_now, '{}_{}_{}_fake.png'.format(self.e, self.i, i + 1))
             save_image(self.de_norm(image_list.data), save_path, normalize=True)
-            #print('Translated test images and saved into "{}"..!'.format(save_path))
+            # print('Translated test images and saved into "{}"..!'.format(save_path))
 
     def test(self):
         # Load trained parameters
         G_path = os.path.join(self.snapshot_path, '{}_G.pth'.format(self.test_model))
         self.G.load_state_dict(torch.load(G_path))
         self.G.eval()
-        #time_total = time.time()
+        # time_total = time.time()
         time_total = 0
         for i, (img_A, img_B) in enumerate(self.data_loader_test):
-            #start = time.time()
+            # start = time.time()
             start = time.time()
             real_org = self.to_var(img_A)
             real_ref = self.to_var(img_B)
@@ -503,8 +563,12 @@ class Solver_PSGAN(object):
             image_list.append(real_ref)
 
             # Get makeup result
-            fake_A, fake_B = self.G(real_org, real_ref)
-            rec_B, rec_A = self.G(fake_B, fake_A)
+            # fake_A, fake_B = self.G(real_org, real_ref)
+            fake_A = self.G(real_org, real_ref)
+            fake_B = self.G(real_ref, real_org)
+            # rec_B, rec_A = self.G(fake_B, fake_A)
+            rec_B = self.G(fake_B, fake_A)
+            rec_A = self.G(fake_A, fake_B)
             time_total += time.time() - start
             image_list.append(fake_A)
             image_list_0.append(fake_A)
@@ -526,4 +590,4 @@ class Solver_PSGAN(object):
             save_path_0 = os.path.join(result_path_now, '{}_{}_{}_fake_single.png'.format(self.e, self.i, i + 1))
             save_image(self.de_norm(image_list_0.data), save_path_0, nrow=1, padding=0, normalize=True)
             print('Translated test images and saved into "{}"..!'.format(save_path))
-        print("average time : {}".format(time_total/len(self.data_loader_test)))
+        print("average time : {}".format(time_total / len(self.data_loader_test)))

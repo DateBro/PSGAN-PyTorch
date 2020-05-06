@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from ops.spectral_norm import spectral_norm as SpectralNorm
 
+
 # Defines the GAN loss which uses either LSGAN or the regular GAN.
 # When LSGAN is used, it is basically same as MSELoss,
 # but it abstracts away the need to create the target label tensor
@@ -11,6 +12,7 @@ from ops.spectral_norm import spectral_norm as SpectralNorm
 
 class ResidualBlock(nn.Module):
     """Residual Block."""
+
     def __init__(self, dim_in, dim_out):
         super(ResidualBlock, self).__init__()
         self.main = nn.Sequential(
@@ -23,13 +25,15 @@ class ResidualBlock(nn.Module):
     def forward(self, x):
         return x + self.main(x)
 
+
 class Discriminator(nn.Module):
     """Discriminator. PatchGAN."""
+
     def __init__(self, image_size=128, conv_dim=64, repeat_num=3, norm='SN'):
         super(Discriminator, self).__init__()
 
         layers = []
-        if norm=='SN':
+        if norm == 'SN':
             layers.append(SpectralNorm(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1)))
         else:
             layers.append(nn.Conv2d(3, conv_dim, kernel_size=4, stride=2, padding=1))
@@ -37,37 +41,36 @@ class Discriminator(nn.Module):
 
         curr_dim = conv_dim
         for i in range(1, repeat_num):
-            if norm=='SN':
-                layers.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1)))
+            if norm == 'SN':
+                layers.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1)))
             else:
-                layers.append(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1))
+                layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1))
             layers.append(nn.LeakyReLU(0.01, inplace=True))
             curr_dim = curr_dim * 2
 
-        #k_size = int(image_size / np.power(2, repeat_num))
-        if norm=='SN':
-            layers.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=1, padding=1)))
+        # k_size = int(image_size / np.power(2, repeat_num))
+        if norm == 'SN':
+            layers.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1)))
         else:
-            layers.append(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=1, padding=1))
+            layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=1, padding=1))
         layers.append(nn.LeakyReLU(0.01, inplace=True))
-        curr_dim = curr_dim *2
+        curr_dim = curr_dim * 2
 
         self.main = nn.Sequential(*layers)
-        if norm=='SN':
+        if norm == 'SN':
             self.conv1 = SpectralNorm(nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False))
         else:
             self.conv1 = nn.Conv2d(curr_dim, 1, kernel_size=4, stride=1, padding=1, bias=False)
 
         # conv1 remain the last square size, 256*256-->30*30
-        #self.conv2 = SpectralNorm(nn.Conv2d(curr_dim, 1, kernel_size=k_size, bias=False))
-        #conv2 output a single number
+        # self.conv2 = SpectralNorm(nn.Conv2d(curr_dim, 1, kernel_size=k_size, bias=False))
+        # conv2 output a single number
 
     def forward(self, x):
         h = self.main(x)
-        #out_real = self.conv1(h)
         out_makeup = self.conv1(h)
-        #return out_real.squeeze(), out_makeup.squeeze()
         return out_makeup.squeeze()
+
 
 class VGG(nn.Module):
     def __init__(self, pool='max'):
@@ -116,7 +119,7 @@ class VGG(nn.Module):
         out['r34'] = F.relu(self.conv3_4(out['r33']))
         out['p3'] = self.pool3(out['r34'])
         out['r41'] = F.relu(self.conv4_1(out['p3']))
-        
+
         out['r42'] = F.relu(self.conv4_2(out['r41']))
         out['r43'] = F.relu(self.conv4_3(out['r42']))
         out['r44'] = F.relu(self.conv4_4(out['r43']))
@@ -126,13 +129,15 @@ class VGG(nn.Module):
         out['r53'] = F.relu(self.conv5_3(out['r52']))
         out['r54'] = F.relu(self.conv5_4(out['r53']))
         out['p5'] = self.pool5(out['r54'])
-        
+
         return [out[key] for key in out_keys]
+
 
 # Makeup Apply Network(MANet)
 class Generator(nn.Module):
     """Generator. Encoder-Decoder Architecture."""
-    def __init__(self, conv_dim=64):
+
+    def __init__(self, conv_dim=64, repeat_num=6):
         super(Generator, self).__init__()
 
         encoder_layers = []
@@ -144,8 +149,8 @@ class Generator(nn.Module):
         # Down-Sampling
         curr_dim = conv_dim
         for i in range(2):
-            encoder_layers.append(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1, bias=False))
-            encoder_layers.append(nn.InstanceNorm2d(curr_dim*2, affine=False))
+            encoder_layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1, bias=False))
+            encoder_layers.append(nn.InstanceNorm2d(curr_dim * 2, affine=False))
             encoder_layers.append(nn.ReLU(inplace=True))
             curr_dim = curr_dim * 2
 
@@ -159,8 +164,9 @@ class Generator(nn.Module):
 
         # Up-Sampling
         for i in range(2):
-            decoder_layers.append(nn.ConvTranspose2d(curr_dim, curr_dim//2, kernel_size=4, stride=2, padding=1, bias=False))
-            decoder_layers.append(nn.InstanceNorm2d(curr_dim//2, affine=True))
+            decoder_layers.append(
+                nn.ConvTranspose2d(curr_dim, curr_dim // 2, kernel_size=4, stride=2, padding=1, bias=False))
+            decoder_layers.append(nn.InstanceNorm2d(curr_dim // 2, affine=True))
             decoder_layers.append(nn.ReLU(inplace=True))
             curr_dim = curr_dim // 2
 
@@ -179,8 +185,10 @@ class Generator(nn.Module):
         result = self.decoder(morphed_fm)
         return result
 
+
 class MDNet(nn.Module):
     """Generator. Encoder-Decoder Architecture."""
+
     # MDNet is similar to the encoder of StarGAN
     def __init__(self, conv_dim=64, repeat_num=3):
         super(MDNet, self).__init__()
@@ -193,8 +201,8 @@ class MDNet(nn.Module):
         # Down-Sampling
         curr_dim = conv_dim
         for i in range(2):
-            layers.append(nn.Conv2d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1, bias=False))
-            layers.append(nn.InstanceNorm2d(curr_dim*2, affine=True))
+            layers.append(nn.Conv2d(curr_dim, curr_dim * 2, kernel_size=4, stride=2, padding=1, bias=False))
+            layers.append(nn.InstanceNorm2d(curr_dim * 2, affine=True))
             layers.append(nn.ReLU(inplace=True))
             curr_dim = curr_dim * 2
 
@@ -207,11 +215,13 @@ class MDNet(nn.Module):
         fm_reference = self.main(reference_image)
         return fm_reference
 
+
 # AMM暂时先不用landmark detector，先试试一般的attention效果如何
 # feature map也先不乘以visual_feature_weight
 # 这里attention部分的计算也先存疑，因为论文中提到x和y需要是同一个区域，但结构图中是softmax
 class AMM(nn.Module):
     """Attentive Makeup Morphing module"""
+
     def __init__(self):
         super(AMM, self).__init__()
         self.visual_feature_weight = 0.01
@@ -221,19 +231,21 @@ class AMM(nn.Module):
 
     def forward(self, fm_source, fm_reference):
         batch_size, channels, width, height = fm_reference.size()
-        old_lambda_matrix = self.lambda_matrix_conv(fm_reference).view(batch_size, -1, width*height)
-        old_beta_matrix = self.beta_matrix_conv(fm_reference).view(batch_size, -1, width*height)
+        old_lambda_matrix = self.lambda_matrix_conv(fm_reference).view(batch_size, -1, width * height)
+        old_beta_matrix = self.beta_matrix_conv(fm_reference).view(batch_size, -1, width * height)
 
         # reshape后fm的形状是C*(H*W)
-        fm_reference.view(batch_size, -1, height*width)
+        temp_fm_reference = fm_reference.view(batch_size, -1, height * width)
+        # print('temp_fm_reference shape: ', temp_fm_reference.shape)
         # fm_source 在reshape后需要transpose成(H*W)*C
-        fm_source.view(batch_size, -1, height*width).permute(0,2,1)
+        temp_fm_source = fm_source.view(batch_size, -1, height * width).permute(0, 2, 1)
+        # print('temp_fm_source shape: ', temp_fm_source.shape)
         # energy的形状应该是N*N，N=H*W
-        energy = torch.bmm(fm_source, fm_reference)
+        energy = torch.bmm(temp_fm_source, temp_fm_reference)
         attention_map = self.softmax(energy)
 
         new_lambda_matrix = torch.bmm(old_lambda_matrix, attention_map.permute(0, 2, 1))
-        new_beta_matrix =torch.bmm(old_beta_matrix, attention_map.permute(0, 2, 1))
+        new_beta_matrix = torch.bmm(old_beta_matrix, attention_map.permute(0, 2, 1))
         new_lambda_matrix = new_lambda_matrix.view(batch_size, 1, width, height)
         new_beta_matrix = new_beta_matrix.view(batch_size, 1, width, height)
 

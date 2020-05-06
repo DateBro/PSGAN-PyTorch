@@ -86,6 +86,7 @@ class MAKEUP(Dataset):
 
     def __len__(self):
         # 为啥train就是max(A,B)，test就是相乘呢?
+        # 这里应该是为了测试的时候实验同一张source对应不同reference的结果
         if self.mode == 'train' or self.mode == 'train_finetune':
             num_A = getattr(self, 'num_of_train_' + self.cls_list[0] + '_data')
             num_B = getattr(self, 'num_of_train_' + self.cls_list[1] + '_data')
