@@ -1,1 +1,2 @@
-from .makeup import MAKEUP
+from .makeup import *
+from .makeup_utils import *

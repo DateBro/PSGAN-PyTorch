@@ -1,13 +1,21 @@
 import os
-import torch
 import random
-import linecache
 
-from torch.utils.data import Dataset
 from PIL import Image
+from torch.utils.data import Dataset
+from torchvision import transforms
+
 
 class MAKEUP(Dataset):
     def __init__(self, image_path, transform, mode, transform_mask, cls_list):
+        # parameter of eye transfer
+        self.eye_margin = 16
+        # down sample size
+        self.diff_size = (64, 64)
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])])
+
         self.image_path = image_path
         self.transform = transform
         self.mode = mode
@@ -19,21 +27,24 @@ class MAKEUP(Dataset):
 
         for cls in self.cls_list:
             setattr(self, "train_" + cls + "_list_path", os.path.join(self.image_path, "train_" + cls + ".txt"))
-            setattr(self, "train_" + cls + "_lines", open(getattr(self, "train_" + cls + "_list_path"), 'r').readlines())
+            setattr(self, "train_" + cls + "_lines",
+                    open(getattr(self, "train_" + cls + "_list_path"), 'r').readlines())
             setattr(self, "num_of_train_" + cls + "_data", len(getattr(self, "train_" + cls + "_lines")))
         for cls in self.cls_list:
             if self.mode == "test_all":
                 setattr(self, "test_" + cls + "_list_path", os.path.join(self.image_path, "test_" + cls + "_all.txt"))
-                setattr(self, "test_" + cls + "_lines", open(getattr(self, "test_" + cls + "_list_path"), 'r').readlines())
+                setattr(self, "test_" + cls + "_lines",
+                        open(getattr(self, "test_" + cls + "_list_path"), 'r').readlines())
                 setattr(self, "num_of_test_" + cls + "_data", len(getattr(self, "test_" + cls + "_lines")))
             else:
                 setattr(self, "test_" + cls + "_list_path", os.path.join(self.image_path, "test_" + cls + ".txt"))
-                setattr(self, "test_" + cls + "_lines", open(getattr(self, "test_" + cls + "_list_path"), 'r').readlines())
+                setattr(self, "test_" + cls + "_lines",
+                        open(getattr(self, "test_" + cls + "_list_path"), 'r').readlines())
                 setattr(self, "num_of_test_" + cls + "_data", len(getattr(self, "test_" + cls + "_lines")))
 
-        print ('Start preprocessing dataset..!')
+        print('Start preprocessing dataset..!')
         self.preprocess()
-        print ('Finished preprocessing dataset..!')
+        print('Finished preprocessing dataset..!')
 
     def preprocess(self):
         for cls in self.cls_list:
@@ -59,33 +70,37 @@ class MAKEUP(Dataset):
                 getattr(self, "test_" + cls + "_mask_filenames").append(splits[1])
 
         if self.mode == "test_baseline":
-            setattr(self, "test_" + self.cls_A + "_filenames", os.listdir(os.path.join(self.image_path, "baseline", "org_aligned")))
-            setattr(self, "num_of_test_" + self.cls_A + "_data", len(os.listdir(os.path.join(self.image_path, "baseline", "org_aligned"))))
-            setattr(self, "test_" + self.cls_B + "_filenames", os.listdir(os.path.join(self.image_path, "baseline", "ref_aligned")))
-            setattr(self, "num_of_test_" + self.cls_B + "_data", len(os.listdir(os.path.join(self.image_path, "baseline", "ref_aligned"))))
+            setattr(self, "test_" + self.cls_A + "_filenames",
+                    os.listdir(os.path.join(self.image_path, "baseline", "org_aligned")))
+            setattr(self, "num_of_test_" + self.cls_A + "_data",
+                    len(os.listdir(os.path.join(self.image_path, "baseline", "org_aligned"))))
+            setattr(self, "test_" + self.cls_B + "_filenames",
+                    os.listdir(os.path.join(self.image_path, "baseline", "ref_aligned")))
+            setattr(self, "num_of_test_" + self.cls_B + "_data",
+                    len(os.listdir(os.path.join(self.image_path, "baseline", "ref_aligned"))))
 
     def __getitem__(self, index):
         if self.mode == 'train' or self.mode == 'train_finetune':
             index_A = random.randint(0, getattr(self, "num_of_train_" + self.cls_A + "_data") - 1)
             index_B = random.randint(0, getattr(self, "num_of_train_" + self.cls_B + "_data") - 1)
             # 这里image_path是通过./data+txt中的image_path得到的，所以txt中应该写的是./data的相对地址，比如/makeup/xxx
-            image_A = Image.open(os.path.join(self.image_path, getattr(self, "train_" + self.cls_A + "_filenames")[index_A])).convert("RGB")
-            image_B = Image.open(os.path.join(self.image_path, getattr(self, "train_" + self.cls_B + "_filenames")[index_B])).convert("RGB")
-            mask_A = Image.open(os.path.join(self.image_path, getattr(self, "train_" + self.cls_A + "_mask_filenames")[index_A]))
-            mask_B = Image.open(os.path.join(self.image_path, getattr(self, "train_" + self.cls_B + "_mask_filenames")[index_B]))
-            return self.transform(image_A), self.transform(image_B), self.transform_mask(mask_A), self.transform_mask(mask_B)
+            mask_A = Image.open(
+                os.path.join(self.image_path, getattr(self, "train_" + self.cls_A + "_mask_filenames")[index_A]))
+            mask_B = Image.open(
+                os.path.join(self.image_path, getattr(self, "train_" + self.cls_B + "_mask_filenames")[index_B]))
+            return os.path.join(self.image_path,
+                                getattr(self, "train_" + self.cls_A + "_filenames")[index_A]), os.path.join(
+                self.image_path, getattr(self, "train_" + self.cls_B + "_filenames")[index_B]), self.transform_mask(
+                mask_A), self.transform_mask(mask_B)
+
         if self.mode in ['test', 'test_all']:
-            #"""
-            image_A = Image.open(os.path.join(self.image_path, getattr(self, "test_" + self.cls_A + "_filenames")[index // getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])).convert("RGB")
-            image_B = Image.open(os.path.join(self.image_path, getattr(self, "test_" + self.cls_B + "_filenames")[index % getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])).convert("RGB")
-            return self.transform(image_A), self.transform(image_B)
-        if self.mode == "test_baseline":
-            image_A = Image.open(os.path.join(self.image_path, "baseline", "org_aligned", getattr(self, "test_" + self.cls_A + "_filenames")[index // getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])).convert("RGB")
-            image_B = Image.open(os.path.join(self.image_path, "baseline", "ref_aligned", getattr(self, "test_" + self.cls_B + "_filenames")[index % getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])).convert("RGB")
-            return self.transform(image_A), self.transform(image_B)
+            image_A = os.path.join(self.image_path, getattr(self, "test_" + self.cls_A + "_filenames")[
+                index // getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])
+            image_B = os.path.join(self.image_path, getattr(self, "test_" + self.cls_B + "_filenames")[
+                index % getattr(self, 'num_of_test_' + self.cls_list[1] + '_data')])
+            return image_A, image_B
 
     def __len__(self):
-        # 为啥train就是max(A,B)，test就是相乘呢?
         # 这里应该是为了测试的时候实验同一张source对应不同reference的结果
         if self.mode == 'train' or self.mode == 'train_finetune':
             num_A = getattr(self, 'num_of_train_' + self.cls_list[0] + '_data')
