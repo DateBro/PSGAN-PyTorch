@@ -2,6 +2,23 @@
 
 **PyTorch** implementation of [**PSGAN: Pose and Expression Robust Spatial-Aware GAN for Customizable Makeup Transfer**](https://arxiv.org/abs/1909.06956), still in construction...
 
+## Related
+
+A makeup-transfer App [**MagicMirror**](https://github.com/Super262/MagicMirror) is developed by [Fengwei Zhang](https://github.com/Super262).
+
+Here are some exemplar results.
+
+When source image and target image are both from the makeup dataset.
+
+![app_example_dataset](https://github.com/DateBro/PSGAN-PyTorch/blob/master/imgs/app_example_dataset.jpg)
+
+When the source image is from the makeup dataset and the target image is from weibo.
+
+![app_example_weibo](https://github.com/DateBro/PSGAN-PyTorch/blob/master/imgs/app_example_weibo.jpg)
+
+When we try to transfer the makeup style from the makeup dataset to an makeup image from weibo.
+
+![app_example1](https://github.com/DateBro/PSGAN-PyTorch/blob/master/imgs/app_example1.jpg)
 
 ## Preparation
 
